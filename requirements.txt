@@ -1,0 +1,8 @@
+requests
+tqdm
+python-dotenv
+google-generativeai
+google-genai
+pydantic
+pymongo
+psycopg2

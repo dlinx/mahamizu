@@ -1,0 +1,40 @@
+# Secrets and credentials
+.env
+.env.local
+.env.*.local
+.secrets
+*.pem
+*.key
+*.crt
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.venv/
+venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Downloads and outputs
+downloads/
+*.pdf
+*.csv
+*.xlsx
+
+# Logs
+*.log
