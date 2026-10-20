@@ -105,11 +105,13 @@ def get_today_date_str():
     return datetime.now().strftime("%d-%m-%Y")
 
 
-def main():
+def main(date_str=None):
     config = load_config()
-    today_str = get_today_date_str()
-    pdf_url = config["pdf_url_template"].format(date=today_str)
-    output_dir = Path(__file__).parent / "downloads"
+    if date_str is None:
+        date_str = os.environ.get("PIPELINE_DATE", get_today_date_str())
+    pdf_url = config["pdf_url_template"].format(date=date_str)
+    # Save to project root downloads directory (not scripts/downloads)
+    output_dir = Path(__file__).parent.parent / "downloads"
     output_dir.mkdir(exist_ok=True)
     filename = pdf_url.split("/")[-1]
     output_path = output_dir / "water_status.pdf"
@@ -118,4 +120,6 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+    date_arg = sys.argv[1] if len(sys.argv) > 1 else None
+    main(date_arg)

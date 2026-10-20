@@ -60,8 +60,8 @@ def extract_report_date(context: str, filename: str):
         except ValueError:
             pass
 
-    # Fallback: return current date
-    return datetime.utcnow()
+    # Fallback: return current date at midnight
+    return datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
 
 
 def determine_report_type(context: str) -> str:
@@ -90,13 +90,15 @@ def determine_table_category(context: str) -> str:
 
 def extract_region(context: str) -> str:
     """Extract region from context."""
+    # Order matters - more specific regions first
     regions = [
         "नागपूर", "अमरावती", "छत्रपती संभाजीनगर",
         "नाशिक", "पुणे", "कोकण", "महाराष्ट्र राज्य"
     ]
-    for region in regions:
-        if region in context:
-            return region
+    # Find all matches and return the longest (most specific) one
+    matches = [r for r in regions if r in context]
+    if matches:
+        return max(matches, key=len)
     return ""
 
 
@@ -244,34 +246,49 @@ def extract_and_enrich_tables(pdf_path: str) -> list:
     now = datetime.utcnow()
     pdf_filename = os.path.basename(pdf_path)
 
-    # Group all data by report_date
-    date_documents = {}
+    # Extract report date ONCE from the PDF (first valid date from context or filename)
+    report_date = None
+    for table in tables:
+        context = table.get("context", "")
+        rd = extract_report_date(context, pdf_filename)
+        # Check if it's a valid date (not just current time fallback)
+        if rd and rd.hour == 0 and rd.minute == 0 and rd.second == 0:
+            report_date = rd
+            break
+
+    # If no valid date found from context, try filename
+    if report_date is None:
+        filename_match = re.search(r'(\d{2}-\d{2}-\d{4})', pdf_filename)
+        if filename_match:
+            try:
+                report_date = datetime.strptime(filename_match.group(1), "%d-%m-%Y")
+            except ValueError:
+                pass
+
+    # Final fallback: today at midnight
+    if report_date is None:
+        report_date = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+
+    # Single document for this PDF
+    doc = {
+        "report_date": report_date,
+        "created_at": datetime.utcnow(),
+        "units": "MCM",
+        "regions": {},
+        "state": "Maharashtra",
+    }
 
     for table in tables:
         context = table.get("context", "")
-        report_date = extract_report_date(context, pdf_filename)
         headers = table.get("headers", [])
         rows = table.get("rows", [])
         category = determine_table_category(context)
 
-        # Initialize date document if not exists
-        if report_date not in date_documents:
-            date_documents[report_date] = {
-                "report_date": report_date,
-                "created_at": now,
-                "units": "MCM",
-                "regions": {},  # region -> {dams: [], summaries: []}
-                "state": "Maharashtra",
-            }
-
-        doc = date_documents[report_date]
-
         if category == "dam_wise_detailed":
             for row in rows:
-                dam_doc = parse_dam_row(headers, row, context, report_date, now)
+                dam_doc = parse_dam_row(headers, row, context, report_date, datetime.utcnow())
                 if dam_doc:
                     region = dam_doc.get("region", "Unknown")
-                    # Remove region and district from dam doc since they're implied by grouping
                     dam_doc.pop("region", None)
                     dam_doc.pop("district", None)
 
@@ -292,35 +309,22 @@ def extract_and_enrich_tables(pdf_path: str) -> list:
                 doc["regions"][region] = {"dams": [], "summaries": []}
             doc["regions"][region]["summaries"].append(summary_doc)
 
-    # Convert to list of documents, converting sets to lists
-    result = []
-    for report_date, data in date_documents.items():
-        # Convert regions dict to final format
-        regions_output = {}
-        for region_name, region_data in data["regions"].items():
-            regions_output[region_name] = {
-                "dams": region_data["dams"],
-                "summaries": region_data["summaries"],
-                "dam_count": len(region_data["dams"]),
-            }
+    # Convert to final format
+    regions_output = {}
+    for region_name, region_data in doc["regions"].items():
+        doc["regions"][region_name] = {
+            "dams": region_data["dams"],
+            "summaries": region_data["summaries"],
+            "dam_count": len(region_data["dams"]),
+        }
 
-        result.append({
-            "report_date": report_date,
-            "created_at": now,
-            "units": "MCM",
-            "state": "Maharashtra",
-            "regions": regions_output,
-        })
-
-    return result
-
-    # Convert to list of documents, converting sets to lists
-    result = []
-    for report_date, data in date_documents.items():
-        data["regions"] = list(data["regions"])
-        data["districts"] = list(data["districts"])
-        data["total_dams"] = len(data["dams"])
-        result.append(data)
+    result = [{
+        "report_date": report_date,
+        "created_at": datetime.utcnow(),
+        "units": "MCM",
+        "state": "Maharashtra",
+        "regions": doc["regions"],
+    }]
 
     return result
 
